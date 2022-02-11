@@ -2,6 +2,7 @@ const { expect } = require('chai')
 const { Agent, db, document, endpoint, util, woql } = require('../lib')
 
 const randomType0 = util.randomString()
+const randomType1 = util.randomString()
 
 describe('woql-auth', function () {
   let agent
@@ -43,12 +44,6 @@ describe('woql-auth', function () {
     expect(r.body.transaction_retry_count).to.equal(0)
   })
 
-  const schema = {
-    '@id': randomType0,
-    '@type': 'Class',
-    something: 'xsd:string',
-  }
-
   const anInsertDocumentQuery = {
     query: {
       '@type': 'InsertDocument',
@@ -88,6 +83,12 @@ describe('woql-auth', function () {
   })
 
   describe('with schema', function () {
+    const schema = {
+      '@id': randomType0,
+      '@type': 'Class',
+      something: 'xsd:string',
+    }
+
     before(async function () {
       await document
         .insert(agent, docPath, { schema: schema })
@@ -183,6 +184,95 @@ describe('woql-auth', function () {
         expect(r.body.inserts).to.equal(0)
         expect(r.body.transaction_retry_count).to.equal(0)
       }
+    })
+  })
+
+  describe('with another schema', function () {
+    const schema = {
+      '@id': randomType1,
+      '@key': { '@type': 'Random' },
+      '@type': 'Class',
+      label: 'xsd:string',
+    }
+    const instance = {
+      '@type': randomType1,
+      label: 'Neel was here first.',
+    }
+    let instanceId
+
+    before(async function () {
+      await document
+        .insert(agent, docPath, { schema })
+        .then(document.verifyInsertSuccess)
+      const r = await document
+        .insert(agent, docPath, { instance })
+        .then(document.verifyInsertSuccess)
+      expect(r.body).to.be.an('array').that.has.lengthOf(1)
+      instanceId = r.body[0]
+    })
+
+    function updateQuery (id) {
+      return {
+        commit_info: { author: 'not_neel', message: 'somebody else' },
+        query: {
+          '@type': 'UpdateDocument',
+          identifier: { '@type': 'NodeValue', node: id },
+          document: {
+            '@type': 'Value',
+            dictionary: {
+              '@type': 'DictionaryTemplate',
+              data: [
+                {
+                  '@type': 'FieldValuePair',
+                  field: '@type',
+                  value: {
+                    '@type': 'Value',
+                    data: { '@type': 'xsd:string', '@value': randomType1 },
+                  },
+                },
+                {
+                  '@type': 'FieldValuePair',
+                  field: '@id',
+                  value: {
+                    '@type': 'Value',
+                    data: { '@type': 'xsd:string', '@value': id },
+                  },
+            },
+                {
+                  '@type': 'FieldValuePair',
+                  field: 'label',
+                  value: {
+                    '@type': 'Value',
+                    data: { '@type': 'xsd:string', '@value': 'Neel has not left.' },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }
+    }
+
+    it('passes UpdateDocument, DeleteDocument', async function () {
+      const query = updateQuery(instanceId)
+      console.error(query)
+
+      {
+        // UpdateDocument
+        const r = await woql
+          .post(agent, woqlPath, query)
+          .then(woql.verifyGetSuccess)
+        console.error(r.body)
+        /*
+        expect(r.body['api:variable_names']).to.be.an('array').that.has.lengthOf(0)
+        expect(r.body.bindings).to.be.an('array').that.has.lengthOf(1)
+        expect(r.body.bindings[0]).to.deep.equal({})
+        expect(r.body.deletes).to.equal(1)
+        expect(r.body.inserts).to.equal(1)
+        expect(r.body.transaction_retry_count).to.equal(0)
+        */
+      }
+
     })
   })
 })

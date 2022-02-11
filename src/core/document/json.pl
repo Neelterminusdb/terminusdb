@@ -2490,6 +2490,20 @@ run_insert_document(Desc, Commit, Document, ID) :-
         insert_document(Context, Document, ID),
         _).
 
+verify_or_update_id(Document, Id, Document) :-
+    get_dict('@id', Document, Document_Id_String),
+    !,
+    atom_string(Document_Id, Document_Id_String),
+    do_or_die(
+        Id = Document_Id,
+        error(document_ids_do_not_match(Id, Document_Id), _)).
+verify_or_update_id(Document, Id, New_Document) :-
+    ground(Id),
+    !,
+    put_dict('@id', Document, Id, New_Document).
+verify_or_update_id(Document, _Id, New_Document) :-
+    New_Document = Document.
+
 replace_document(DB, Document) :-
     replace_document(DB, Document, false, _).
 
@@ -2501,10 +2515,20 @@ replace_document(Transaction, Document, Create, Id) :-
     replace_document(Transaction, Document, Create, Captures, Id, _Dependencies, _Captures_Out).
 
 replace_document(Transaction, Document, Create, Captures_In, Id, Dependencies, Captures_Out) :-
+    format(user_error, 'replace_document: Id=~q~n', [Id]),
+    format(user_error, 'replace_document: Document=~q~n', [Document]),
     is_transaction(Transaction),
     !,
-    json_elaborate(Transaction, Document, Captures_In, Elaborated, Dependencies, Captures_Out),
-    get_dict('@id', Elaborated, Id),
+    verify_or_update_id(Document, Id, Document_With_Id),
+    json_elaborate(Transaction, Document_With_Id, Captures_In, Elaborated, Dependencies, Captures_Out),
+    format(user_error, 'replace_document: Elaborated=~q~n', [Elaborated]),
+    do_or_die(
+        get_dict('@id', Elaborated, Id_After_Elaboration_String),
+        error(missing_expected_id_in_elaborated_document(Elaborated), _)),
+    atom_string(Id_After_Elaboration, Id_After_Elaboration_String),
+    do_or_die(
+        Id_After_Elaboration = Id,
+        error(document_ids_do_not_match(Id, Id_After_Elaboration), _)),
     catch(delete_document(Transaction, false, Id),
           error(document_does_not_exist(_),_),
           (   Create = true
